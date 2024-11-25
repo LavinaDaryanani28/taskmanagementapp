@@ -2,135 +2,228 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/task_model.dart';
 
 class TaskProvider with ChangeNotifier {
-  Map<String, List<Map<String, String>>> _tasksByCategory = {};
-  Map<String, int> _taskCounts = {}; // Track task count by category
+  Map<String, List<TaskModel>> _tasksByCategory = {}; // Core data storage
 
   TaskProvider() {
-    loadTasks();  // Automatically load tasks on initialization
+    loadTasks(); // Load tasks on initialization
   }
 
-  // Getters
-  Map<String, List<Map<String, String>>> get tasksByCategory => _tasksByCategory;
-  Map<String, int> get taskCounts => _taskCounts;
-
-  // Getter to check if tasks are loaded
-  bool get areTasksLoaded {
-    return _tasksByCategory.isNotEmpty;
-  }
-
-  // Getter to fetch tasks of a specific category
-  List<Map<String, String>> getTasksByCategory(String category) {
-    return _tasksByCategory[category] ?? [];
-  }
-
-  // Add task
-  Future<void> addTask(String category, String taskName, String description) async {
+  // Add a new task to a specific category
+  Future<void> addTask({
+    required String category,
+    required String taskName,
+    String? description,
+    DateTime? dueDate,
+  }) async {
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      if (_tasksByCategory[category] == null) {
-        _tasksByCategory[category] = [];
-      }
+      // Ensure category exists in the map
+      _tasksByCategory.putIfAbsent(category, () => []);
 
-      Map<String, String> task = {
-        'taskName': taskName,
-        'description': description,
-      };
+      // Create a new task
+      TaskModel newTask = TaskModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        taskName: taskName,
+        category: category,
+        description: description,
+        dueDate: dueDate,
+        isCompleted: false,
+      );
 
-      _tasksByCategory[category]!.add(task);
+      // Add task to category
+      _tasksByCategory[category]!.add(newTask);
 
-      _updateTaskCount(category); // Update counts for all categories
-      _syncTaskCounts();  // Sync task counts for all categories
-      await _saveTasks(); // Save the updated task list
-      notifyListeners();  // Notify the UI
-    } catch (e) {
-      debugPrint('Error adding task: $e');
+      // Save tasks to SharedPreferences
+      await _saveTasks();
+      notifyListeners();
+    } catch (e, stackTrace) {
+      log('Error adding task: $e', stackTrace: stackTrace);
+      rethrow; // Propagate error if needed
     }
   }
 
-  void _syncTaskCounts() {
-    for (String category in _tasksByCategory.keys) {
-      _taskCounts[category] = _tasksByCategory[category]?.length ?? 0;
-    }
+  // Remove a task from a specific category
+  Future<void> removeTask(String category, String taskId) async {
+    try {
+      final taskIndex =
+          _tasksByCategory[category]?.indexWhere((task) => task.id == taskId);
 
-    // notifyListeners(); // Ensure all categories reflect the updated counts
+      if (taskIndex != null && taskIndex != -1) {
+        // Remove task from the list
+        _tasksByCategory[category]!.removeAt(taskIndex);
+
+        // Save updated tasks to SharedPreferences
+        await _saveTasks();
+        notifyListeners();
+      } else {
+        log('Task with ID $taskId not found in category $category.');
+      }
+    } catch (e, stackTrace) {
+      log('Error removing task: $e', stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> updateTask(
+    String taskId, {
+    String? newCategory,
+    String? oldCategory,
+    required String taskName,
+    String? description,
+    DateTime? dueDate,
+  }) async {
+    try {
+      // Locate the current category and task
+      TaskModel? taskToUpdate;
+
+      // Locate the task within the old category
+      taskToUpdate = _tasksByCategory[oldCategory]?.firstWhere(
+        (task) => task.id == taskId,
+        orElse: () => null as TaskModel, // Just return null (no casting needed)
+      );
+
+      if (taskToUpdate == null) {
+        log('Task with ID $taskId not found.');
+        return;
+      }
+      bool isUpdated = false;
+      // If the category is the same, update the task details
+      if (oldCategory == newCategory) {
+        // Update task properties only if they have changed
+        if (taskName != taskToUpdate.taskName) {
+          taskToUpdate.taskName = taskName;
+          isUpdated = true;
+        }
+
+        if (description != taskToUpdate.description) {
+          taskToUpdate.description = description;
+          isUpdated = true;
+        }
+
+        if (dueDate != taskToUpdate.dueDate) {
+          taskToUpdate.dueDate = dueDate;
+          isUpdated = true;
+        }
+
+        // If changes occurred, update the task in _tasksByCategory
+        if (isUpdated) {
+          _tasksByCategory[oldCategory!] = [
+            for (var task in _tasksByCategory[oldCategory]!)
+              if (task.id == taskId) taskToUpdate else task
+          ];
+        }
+      } else if (oldCategory != newCategory) {
+        log('Category has changed. Please move the task to the new category.');
+        // Remove task from the old category
+        _tasksByCategory[oldCategory]?.remove(taskToUpdate);
+
+        // Ensure the new category exists
+        _tasksByCategory.putIfAbsent(newCategory!, () => []);
+        _tasksByCategory[newCategory]!.add(taskToUpdate);
+
+        // Update the task's category
+        taskToUpdate.category = newCategory;
+        isUpdated = true; // Mark as updated if category changed
+        // Optionally handle category change logic
+      } else {
+        log('No changes made to the task.');
+      }
+      // Save updated tasks to SharedPreferences
+      await _saveTasks();
+      notifyListeners();
+      log('Task updated successfully.');
+    } catch (e, stackTrace) {
+      log('Error updating task: $e', stackTrace: stackTrace);
+      rethrow;
+    }
   }
 
   // Load tasks from SharedPreferences
   Future<void> loadTasks() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? tasksByCategoryJson = prefs.getString('tasksByCategory');
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? tasksJson = prefs.getString('tasksByCategory');
 
-    if (tasksByCategoryJson != null) {
-      try {
-        Map<String, dynamic> decodedMap = jsonDecode(tasksByCategoryJson);
+      if (tasksJson != null) {
+        Map<String, dynamic> decodedMap = jsonDecode(tasksJson);
         _tasksByCategory = decodedMap.map((key, value) {
-          List<Map<String, String>> taskList = List<Map<String, String>>.from(
-            (value as List<dynamic>)
-                .map((task) => Map<String, String>.from(task as Map)),
-          );
+          List<TaskModel> taskList = List<dynamic>.from(value).map((task) {
+            return TaskModel.fromJson(task);
+          }).toList();
           return MapEntry(key, taskList);
         });
-
-        _tasksByCategory.forEach((category, tasks) {
-          _taskCounts[category] = tasks.length;
-        });
-        _syncTaskCounts();  // Sync task counts after loading tasks
-      } catch (e) {
-        log('Error loading tasks: $e');
+        log('Tasks loaded successfully.');
+      } else {
         _tasksByCategory = {};
-        _taskCounts = {};
+        log('No tasks found in SharedPreferences.');
       }
-    } else {
+      notifyListeners();
+    } catch (e, stackTrace) {
+      log('Error loading tasks: $e', stackTrace: stackTrace);
       _tasksByCategory = {};
-      _taskCounts = {};
+      notifyListeners();
     }
-    notifyListeners();
+  }
+
+  // Count the number of tasks for a specific category
+  int getTaskCount(String category) {
+    return _tasksByCategory[category]?.length ?? 0;
+  }
+
+  // Get task counts for all categories
+  Map<String, int> get taskCounts {
+    return _tasksByCategory
+        .map((category, tasks) => MapEntry(category, tasks.length));
   }
 
   // Save tasks to SharedPreferences
   Future<void> _saveTasks() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-
     try {
-      String tasksJson = jsonEncode(_tasksByCategory);
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+
+      String tasksJson = jsonEncode(_tasksByCategory.map((key, value) {
+        return MapEntry(key, value.map((task) => task.toJson()).toList());
+      }));
+
       await prefs.setString('tasksByCategory', tasksJson);
-      log("task is saved in savetask");
-    } catch (e) {
-      log('Error saving tasks: $e');
+      log('Tasks saved successfully.');
+    } catch (e, stackTrace) {
+      log('Error saving tasks: $e', stackTrace: stackTrace);
     }
   }
-  Future<void> deleteTask(String category, int taskIndex) async {
+
+  // Clear all tasks (optional utility)
+  Future<void> clearAllTasks() async {
     try {
-      if (_tasksByCategory[category] != null && _tasksByCategory[category]!.isNotEmpty) {
-        _tasksByCategory[category]!.removeAt(taskIndex);
-        _syncTaskCounts();  // Sync task counts for all categories
-        await _saveTasks();  // Save the updated task list
-        notifyListeners();  // Notify the UI about the change
-      }
-    } catch (e) {
-      debugPrint('Error deleting task: $e');
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove('tasksByCategory');
+      _tasksByCategory.clear();
+      notifyListeners();
+      log('All tasks cleared successfully.');
+    } catch (e, stackTrace) {
+      log('Error clearing all tasks: $e', stackTrace: stackTrace);
     }
   }
 
-  // Update task count after adding or removing a task
-  void _updateTaskCount(String category) {
-    _taskCounts[category] = _tasksByCategory[category]?.length ?? 0;
-
-    // Ensure other categories are also checked
-    for (String cat in _tasksByCategory.keys) {
-      if (cat != category) {
-        _taskCounts[cat] = _tasksByCategory[cat]?.length ?? 0;
-      }
+  List<TaskModel> filterTasksByCategory(String category) {
+    // Check if the category exists and if it's not null
+    if (category.isNotEmpty && _tasksByCategory.containsKey(category)) {
+      // Safely access the list of tasks for the category
+      return _tasksByCategory[category]!
+          .where((task) => task.category == category)
+          .toList();
     }
-
-    // notifyListeners(); // Notify after all updates
+    return []; // Return an empty list if category is not found or invalid
   }
 
-  // Getter to fetch task count for a specific category
-  // int getTaskCount(String category) {
-  //   return _taskCounts[category] ?? 0;
-  // }
+  void toggleTaskCompletion(TaskModel task) {
+    // Ensure the task exists and is not null before toggling completion
+    if (task != null) {
+      task.isCompleted = !task.isCompleted;
+      notifyListeners();
+      _saveTasks(); // Save updated tasks
+    }
+  }
 }
-

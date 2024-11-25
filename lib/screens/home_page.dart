@@ -1,15 +1,10 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-// import 'package:provider/provider.dart';
-// import '../providers/category_provider.dart';
+import '../providers/category_provider.dart';
 import '../providers/task_provider.dart';
 import '../services/shared_preferences_service.dart';
-// import '../widgets/category_container.dart';
 import '../widgets/category_container.dart';
 import '../widgets/summary_container.dart';
-// import '../providers/task_provider.dart';
 import '../widgets/search_bar.dart';
 
 class HomePageContent extends StatefulWidget {
@@ -20,28 +15,56 @@ class HomePageContent extends StatefulWidget {
 class _HomePageContentState extends State<HomePageContent> {
   String? username;
   String? age;
+  bool isLoading = true;
+  String errorMessage = "";
 
   @override
   void initState() {
     super.initState();
-    _loadUserInfo();
-    _loadTasks(); // Load tasks when the page is initialized
+    _initializeData();
   }
+
+  Future<void> _initializeData() async {
+    try {
+      await Future.wait([
+        _loadUserInfo(),
+        _loadTasks(),
+        Provider.of<CategoryProvider>(context, listen: false).loadCategories(),
+      ]);
+    } catch (e) {
+      setState(() {
+        errorMessage = "Failed to load data: $e";
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
 
   Future<void> _loadUserInfo() async {
-    username = await SharedPreferencesService.getUserName();
-    age = await SharedPreferencesService.getUserAge();
-    setState(() {});
+    try {
+      username = await SharedPreferencesService.getUserName();
+      age = await SharedPreferencesService.getUserAge();
+    } catch (e) {
+      throw Exception("Error loading user info: $e");
+    }
   }
 
-  // Ensure tasks are loaded once and not continuously
   Future<void> _loadTasks() async {
-    await Provider.of<TaskProvider>(context, listen: false).loadTasks();
+    try {
+      await Provider.of<TaskProvider>(context, listen: false).loadTasks();
+    } catch (e) {
+      throw Exception("Error loading tasks: $e");
+    }
   }
 
   void _handleSearch(String query) {
     // Handle the search logic here, e.g., filter tasks based on the query
-    print('Searching for: $query');
+    debugPrint('Searching for: $query');
   }
 
   @override
@@ -53,13 +76,33 @@ class _HomePageContentState extends State<HomePageContent> {
     double horizontalPadding = screenWidth * 0.05;
     double verticalPadding = screenHeight * 0.02;
 
-    // final categoryProvider = Provider.of<CategoryProvider>(context);
-    // final taskProvider = Provider.of<TaskProvider>(context);
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: const Text("Loading...", style: TextStyle(color: Colors.black)),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    // log(taskProvider.taskCounts.toString());
+    if (errorMessage.isNotEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: const Text("Error", style: TextStyle(color: Colors.black)),
+        ),
+        body: Center(
+          child: Text(errorMessage, style: const TextStyle(color: Colors.red)),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(110),
+        preferredSize: const Size.fromHeight(90),
         child: AppBar(
           backgroundColor: Colors.white,
           flexibleSpace: Padding(
@@ -74,25 +117,25 @@ class _HomePageContentState extends State<HomePageContent> {
                 username != null && age != null
                     ? Text(
                   "Welcome, $username! Age: $age",
-                  style: TextStyle(
+                  style: const TextStyle(
                       color: Colors.red,
-                      fontSize: 20,
+                      fontSize: 25,
                       fontWeight: FontWeight.bold),
                 )
-                    : Text(
-                  "Loading user info...",
+                    : const Text(
+                  "Welcome!",
                   style: TextStyle(
                       color: Colors.red,
-                      fontSize: 20,
+                      fontSize: 40,
                       fontWeight: FontWeight.bold),
                 ),
-                Text(
-                  "You have 5 tasks today.",
-                  style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold),
-                ),
+                // const Text(
+                //   "You have tasks to complete today.",
+                //   style: TextStyle(
+                //       color: Colors.black,
+                //       fontSize: 26,
+                //       fontWeight: FontWeight.bold),
+                // ),
               ],
             ),
           ),
@@ -106,18 +149,20 @@ class _HomePageContentState extends State<HomePageContent> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CustomSearchBar(onSearch: _handleSearch),
-            SizedBox(height: 20),
-            Text("Summary", style: TextStyle(color: Colors.black, fontSize: 18)),
-            SizedBox(height: 10),
-            SummaryContainer(),
-            SizedBox(height: 20),
-            Text("Task Categories", style: TextStyle(color: Colors.black, fontSize: 18)),
-            SizedBox(height: 10),
-            // Ensure we are only waiting for the tasks to be loaded once
-            CategoryContainer(
-              // categories: categoryProvider.allCategories,
-              // taskProvider: taskProvider,  // Pass taskProvider to update task counts dynamically
+            const SizedBox(height: 20),
+            const Text(
+              "Summary",
+              style: TextStyle(color: Colors.black, fontSize: 18),
             ),
+            const SizedBox(height: 10),
+            SummaryContainer(),
+            const SizedBox(height: 20),
+            const Text(
+              "Task Categories",
+              style: TextStyle(color: Colors.black, fontSize: 18),
+            ),
+            const SizedBox(height: 10),
+            CategoryContainer(),
           ],
         ),
       ),

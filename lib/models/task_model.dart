@@ -1,29 +1,60 @@
-class Task {
-  String name;
-  String description;
-  String category;
+class TaskModel {
+  final String id;
+  late String taskName; // Required
+  late String category; // Required
+  late String? description; // Optional
+  late DateTime? dueDate; // Optional
+  late bool isCompleted; // Tracks task completion status
 
-  Task({
-    required this.name,
-    required this.description,
+  TaskModel({
+    required this.id,
+    required this.taskName,
     required this.category,
+    this.description,
+    this.dueDate,
+    this.isCompleted = false, // Default to false
   });
 
-  // Convert a Task to a map so it can be stored in SharedPreferences
-  Map<String, dynamic> toMap() {
+  // Factory constructor to create a TaskModel instance from JSON
+  factory TaskModel.fromJson(Map<String, dynamic> json) {
+    return TaskModel(
+      id: json['id'] as String,
+      taskName: json['taskName'] as String,
+      category: json['category'] as String,
+      description: json['description'] as String?, // Nullable field
+      dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate']) : null, // Nullable field
+      isCompleted: json['isCompleted'] as bool? ?? false, // Default to false if null
+    );
+  }
+
+  // Method to convert a TaskModel instance to JSON
+  Map<String, dynamic> toJson() {
     return {
-      'name': name,
-      'description': description,
+      'id': id,
+      'taskName': taskName,
       'category': category,
+      'description': description,
+      'dueDate': dueDate?.toIso8601String(),
+      'isCompleted': isCompleted,
     };
   }
 
-  // Convert a map into a Task
-  factory Task.fromMap(Map<String, dynamic> map) {
-    return Task(
-      name: map['name'],
-      description: map['description'],
-      category: map['category'],
+  // Method to create a copy of the task with updated fields
+  TaskModel copyWith({
+    String? id,
+    String? taskName,
+    String? category,
+    String? description,
+    DateTime? dueDate,
+    bool? isCompleted,
+  }) {
+    return TaskModel(
+      id: id ?? this.id,
+      taskName: taskName ?? this.taskName,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      dueDate: dueDate ?? this.dueDate,
+      isCompleted: isCompleted ?? this.isCompleted,
     );
   }
 }

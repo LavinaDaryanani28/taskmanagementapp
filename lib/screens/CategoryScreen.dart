@@ -5,7 +5,7 @@ import '../providers/category_provider.dart';
 class CategoryScreen extends StatelessWidget {
   final TextEditingController _categoryController = TextEditingController();
 
-  // Function to open dialog for adding category
+  // Function to open dialog for adding a category
   void _showAddCategoryDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -26,12 +26,39 @@ class CategoryScreen extends StatelessWidget {
               child: const Text("Cancel"),
             ),
             TextButton(
-              onPressed: () {
-                // Add category functionality here
-                Provider.of<CategoryProvider>(context, listen: false)
-                    .addCategory(_categoryController.text.trim());
+              onPressed: () async {
+                final categoryProvider =
+                Provider.of<CategoryProvider>(context, listen: false);
+                String newCategory = _categoryController.text.trim();
+
+                if (newCategory.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Category name cannot be empty."),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                } else {
+                  try {
+                    await categoryProvider.addCategory(newCategory);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Category '$newCategory' added."),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    Navigator.of(context).pop(); // Close dialog after adding
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Error: $e"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+
                 _categoryController.clear();
-                Navigator.of(context).pop(); // Close dialog after adding
               },
               child: const Text("Add"),
             ),
@@ -59,26 +86,55 @@ class CategoryScreen extends StatelessWidget {
               "Default Categories",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            ...categoryProvider.defaultCategories.map((category) => ListTile(
-              title: Text(category),
-              leading: const Icon(Icons.category, color: Colors.grey),
-            )),
+            ...categoryProvider.defaultCategories.map(
+                  (category) => ListTile(
+                title: Text(category),
+                leading: const Icon(Icons.category, color: Colors.grey),
+              ),
+            ),
             const SizedBox(height: 20),
             const Text(
               "Custom Categories",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             Expanded(
-              child: ListView.builder(
+              child: categoryProvider.customCategories.isEmpty
+                  ? const Center(
+                child: Text(
+                  "No custom categories available.",
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              )
+                  : ListView.builder(
                 itemCount: categoryProvider.customCategories.length,
                 itemBuilder: (context, index) {
-                  final category = categoryProvider.customCategories[index];
+                  final category =
+                  categoryProvider.customCategories[index];
                   return ListTile(
                     title: Text(category),
-                    leading: const Icon(Icons.category, color: Colors.blue),
+                    leading:
+                    const Icon(Icons.category, color: Colors.blue),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => categoryProvider.deleteCategory(category),
+                      onPressed: () async {
+                        try {
+                          await categoryProvider.deleteCategory(category);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content:
+                              Text("Category '$category' deleted."),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("Error: $e"),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
                     ),
                   );
                 },

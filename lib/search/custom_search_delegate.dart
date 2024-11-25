@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
+// Custom search delegate for handling search queries
 class CustomSearchDelegate extends SearchDelegate {
+  final ValueChanged<String> onSearch;
+
+  CustomSearchDelegate({required this.onSearch});
+
   @override
   List<Widget> buildActions(BuildContext context) {
     return [
@@ -25,12 +30,21 @@ class CustomSearchDelegate extends SearchDelegate {
 
   @override
   Widget buildResults(BuildContext context) {
-    return Center(child: Text('Search results for "$query"'));
+    onSearch(query);
+    close(context, null);
+    return Center(
+      child: Text('Searching for "$query"...'),
+    );
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    final suggestions = query.isEmpty ? [] : ['Example1', 'Example2', 'Example3'].where((e) => e.contains(query)).toList();
+    final suggestions = query.isEmpty
+        ? []
+        : ['Example1', 'Example2', 'Example3']
+        .where((item) => item.contains(query))
+        .toList();
+
     return ListView.builder(
       itemCount: suggestions.length,
       itemBuilder: (context, index) {
